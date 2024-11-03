@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_socketio import SocketIO, emit
 from pywebio.platform.flask import webio_view
 from pywebio import STATIC_PATH
 from pywebio.input import *
@@ -8,8 +9,10 @@ import random
 import logging
 import threading
 import time
+import os
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -65,8 +68,7 @@ def chat(chat_id):
     chat_msgs[chat_id].append(('📢', f'`{nickname}` присоединился к чату!'))
     msg_box.append(put_markdown(f'📢 `{nickname}` присоединился к чату'))
 
-    refresh_thread = threading.Thread(target=refresh_msg, args=(chat_id, nickname, msg_box))
-    refresh_thread.start()
+    socketio.emit('chat_message', {'nickname': '📢', 'message': f'`{nickname}` присоединился к чату!'}, room=chat_id)
 
     while True:
         data = input_group("💭 Новое сообщение", [
@@ -80,32 +82,26 @@ def chat(chat_id):
         msg_box.append(put_markdown(f"`{nickname}`: {data['msg']}"))
         chat_msgs[chat_id].append((nickname, data['msg']))
 
-    refresh_thread.join()
+        socketio.emit('chat_message', {'nickname': nickname, 'message': data['msg']}, room=chat_id)
 
     toast("Вы вышли из чата!")
     msg_box.append(put_markdown(f'📢 Пользователь `{nickname}` покинул чат!'))
     chat_msgs[chat_id].append(('📢', f'Пользователь `{nickname}` покинул чат!'))
 
+    socketio.emit('chat_message', {'nickname': '📢', 'message': f'Пользователь `{nickname}` покинул чат!'}, room=chat_id)
+
     put_buttons(['Перезайти'], onclick=lambda btn:run_js('window.location.reload()'))
 
-def refresh_msg(chat_id, nickname, msg_box):
-    global chat_msgs
-    last_idx = len(chat_msgs[chat_id])
+@socketio.on('connect')
+def handle_connect():
+    logger.info('Client connected')
 
-    while True:
-        time.sleep(1)
-        
-        for m in chat_msgs[chat_id][last_idx:]:
-            if m[0] != nickname: # if not a message from current user
-                msg_box.append(put_markdown(f"`{m[0]}`: {m[1]}"))
-        
-        # remove expired
-        if len(chat_msgs[chat_id]) > MAX_MESSAGES_COUNT:
-            chat_msgs[chat_id] = chat_msgs[chat_id][len(chat_msgs[chat_id]) // 2:]
-        
-        last_idx = len(chat_msgs[chat_id])
+@socketio.on('disconnect')
+def handle_disconnect():
+    logger.info('Client disconnected')
 
 app.add_url_rule('/', 'webio_view', webio_view(main), methods=['GET', 'POST', 'OPTIONS'])
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    port = int(os.environ.get('PORT', 8080))
+    socketio.run(app, host='0.0.0.0', port=port)
