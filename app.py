@@ -1,10 +1,15 @@
 import asyncio
 import random
+import logging
+import os
 
 from pywebio import start_server
 from pywebio.input import *
 from pywebio.output import *
 from pywebio.session import defer_call, info as session_info, run_async, run_js
+
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG)
 
 chat_rooms = {}
 
@@ -24,9 +29,13 @@ async def main():
         chat_id = generate_chat_id()
         chat_rooms[chat_id] = {'msgs': [], 'users': set()}
         toast(f"Создан новый чат с ID: {chat_id}")
+        logging.info(f"Создан новый чат с ID: {chat_id}")
     elif chat_id not in chat_rooms:
         toast("Чат с таким ID не найден!", color='error')
+        logging.warning(f"Чат с ID {chat_id} не найден")
         return
+    else:
+        logging.info(f"Присоединение к существующему чату с ID: {chat_id}")
 
     # Отображение ID чата в заголовке
     put_markdown(f"## 🧊 Чат ID: {chat_id}")
@@ -80,4 +89,5 @@ async def refresh_msg(chat_id, nickname, msg_box):
         last_idx = len(chat_rooms[chat_id]['msgs'])
 
 if __name__ == "__main__":
-    start_server(main, debug=True, port=8080, cdn=False)
+    port = int(os.environ.get("PORT", 8080))
+    start_server(main, debug=True, port=port, cdn=False)
