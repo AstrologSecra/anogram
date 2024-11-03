@@ -2,6 +2,9 @@ import asyncio
 import random
 import logging
 import os
+import hashlib
+import base64
+import json
 
 from pywebio import start_server
 from pywebio.input import *
@@ -12,22 +15,74 @@ from pywebio.session import defer_call, info as session_info, run_async, run_js
 logging.basicConfig(level=logging.DEBUG)
 
 chat_rooms = {}
+users_db = {}  # База данных пользователей (хэш -> имя)
 
 MAX_MESSAGES_COUNT = 100
 
 def generate_chat_id():
     return ''.join(random.choices('0123456789', k=6))
 
+def generate_hash(name):
+    # Генерируем случайные символы для добавления в хэш
+    random_chars = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=5))
+    # Создаем строку для хеширования
+    hash_input = f"{name}{random_chars}"
+    # Хешируем строку с использованием SHA-256
+    hash_object = hashlib.sha256(hash_input.encode())
+    # Возвращаем хэш в виде base64 строки
+    return base64.b64encode(hash_object.digest()).decode()
+
+def load_data():
+    global chat_rooms, users_db
+    if os.path.exists('users.json'):
+        with open('users.json', 'r') as f:
+            users_db = json.load(f)
+    if os.path.exists('chats.json'):
+        with open('chats.json', 'r') as f:
+            chat_rooms = json.load(f)
+            for chat_id in chat_rooms:
+                chat_rooms[chat_id]['users'] = set(chat_rooms[chat_id]['users'])
+
+def save_data():
+    with open('users.json', 'w') as f:
+        json.dump(users_db, f)
+    with open('chats.json', 'w') as f:
+        json.dump(chat_rooms, f, default=lambda x: list(x) if isinstance(x, set) else x)
+
 async def main():
-    global chat_rooms
+    global chat_rooms, users_db
+    
+    load_data()
     
     put_markdown("## 🧊 Добро пожаловать в онлайн чат!\nИсходный код данного чата укладывается в 100 строк кода!")
+
+    action = await select("Выберите действие", ["Регистрация", "Вход"])
+
+    if action == "Регистрация":
+        name = await input("Введите ваше имя", required=True)
+        user_hash = generate_hash(name)
+        users_db[user_hash] = name
+        save_data()
+        toast(f"Ваш хэш для входа: {user_hash}")
+        logging.info(f"Зарегистрирован новый пользователь с хэшем: {user_hash}")
+        # Открываем новое окно с хэшем пользователя
+        run_js(f'window.open("about:blank", "_blank").document.write("Ваш хэш для входа: {user_hash}");')
+    elif action == "Вход":
+        user_hash = await input("Введите ваш хэш", required=True)
+        if user_hash in users_db:
+            name = users_db[user_hash]
+            logging.info(f"Пользователь с хэшем {user_hash} вошел в систему")
+        else:
+            toast("Хэш не найден!", color='error')
+            logging.warning(f"Хэш {user_hash} не найден")
+            return
 
     chat_id = await input("Введите ID чата (оставьте пустым для создания нового)", required=False, placeholder="6-значный ID")
     
     if not chat_id:
         chat_id = generate_chat_id()
         chat_rooms[chat_id] = {'msgs': [], 'users': set()}
+        save_data()
         toast(f"Создан новый чат с ID: {chat_id}")
         logging.info(f"Создан новый чат с ID: {chat_id}")
     elif chat_id not in chat_rooms:
@@ -43,13 +98,13 @@ async def main():
     msg_box = output()
     put_scrollable(msg_box, height=300, keep_bottom=True)
 
-    nickname = await input("Войти в чат", required=True, placeholder="Ваше имя", validate=lambda n: "Такой ник уже используется!" if n in chat_rooms[chat_id]['users'] or n == '📢' else None)
-    chat_rooms[chat_id]['users'].add(nickname)
+    chat_rooms[chat_id]['users'].add(name)
+    save_data()
 
-    chat_rooms[chat_id]['msgs'].append(('📢', f'`{nickname}` присоединился к чату!'))
-    msg_box.append(put_markdown(f'📢 `{nickname}` присоединился к чату'))
+    chat_rooms[chat_id]['msgs'].append(('📢', f'`{name}` присоединился к чату!'))
+    msg_box.append(put_markdown(f'📢 `{name}` присоединился к чату'))
 
-    refresh_task = run_async(refresh_msg(chat_id, nickname, msg_box))
+    refresh_task = run_async(refresh_msg(chat_id, name, msg_box))
 
     while True:
         data = await input_group("💭 Новое сообщение", [
@@ -60,15 +115,18 @@ async def main():
         if data is None:
             break
 
-        msg_box.append(put_markdown(f"`{nickname}`: {data['msg']}"))
-        chat_rooms[chat_id]['msgs'].append((nickname, data['msg']))
+        msg_box.append(put_markdown(f"`{name}`: {data['msg']}"))
+        chat_rooms[chat_id]['msgs'].append((name, data['msg']))
+        save_data()
 
     refresh_task.close()
 
-    chat_rooms[chat_id]['users'].remove(nickname)
+    chat_rooms[chat_id]['users'].remove(name)
+    save_data()
     toast("Вы вышли из чата!")
-    msg_box.append(put_markdown(f'📢 Пользователь `{nickname}` покинул чат!'))
-    chat_rooms[chat_id]['msgs'].append(('📢', f'Пользователь `{nickname}` покинул чат!'))
+    msg_box.append(put_markdown(f'📢 Пользователь `{name}` покинул чат!'))
+    chat_rooms[chat_id]['msgs'].append(('📢', f'Пользователь `{name}` покинул чат!'))
+    save_data()
 
     put_buttons(['Перезайти'], onclick=lambda btn:run_js('window.location.reload()'))
 
@@ -85,6 +143,7 @@ async def refresh_msg(chat_id, nickname, msg_box):
         # remove expired
         if len(chat_rooms[chat_id]['msgs']) > MAX_MESSAGES_COUNT:
             chat_rooms[chat_id]['msgs'] = chat_rooms[chat_id]['msgs'][len(chat_rooms[chat_id]['msgs']) // 2:]
+            save_data()
         
         last_idx = len(chat_rooms[chat_id]['msgs'])
 
