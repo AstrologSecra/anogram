@@ -59,22 +59,27 @@ async def main():
     action = await select("Выберите действие", ["Регистрация", "Вход"])
 
     if action == "Регистрация":
-        name = await input("Введите ваше имя", required=True)
+        while True:
+            name = await input("Введите ваше имя", required=True)
+            if name in users_db.values():
+                toast("Этот ник уже занят! Пожалуйста, выберите другой.", color='error')
+            else:
+                break
         user_hash = generate_hash(name)
         users_db[user_hash] = name
         save_data()
         toast(f"Ваш хэш для входа: {user_hash}")
-        logging.info(f"Зарегистрирован новый пользователь с хэшем: {user_hash}")
+        logging.info(f"Зарегистрирован новый пользователь с именем: {name}")
         # Открываем новое окно с хэшем пользователя
         run_js(f'window.open("about:blank", "_blank").document.write("Ваш хэш для входа: {user_hash}");')
     elif action == "Вход":
         user_hash = await input("Введите ваш хэш", required=True)
         if user_hash in users_db:
             name = users_db[user_hash]
-            logging.info(f"Пользователь с хэшем {user_hash} вошел в систему")
+            logging.info(f"Пользователь с именем {name} вошел в систему")
         else:
             toast("Хэш не найден!", color='error')
-            logging.warning(f"Хэш {user_hash} не найден")
+            logging.warning(f"Хэш не найден")
             return
 
     chat_id = await input("Введите ID чата (оставьте пустым для создания нового)", required=False, placeholder="6-значный ID")
@@ -91,6 +96,11 @@ async def main():
         return
     else:
         logging.info(f"Присоединение к существующему чату с ID: {chat_id}")
+
+    # Проверка на уникальность ника в чате
+    if name in chat_rooms[chat_id]['users']:
+        toast("Этот ник уже используется в этом чате!", color='error')
+        return
 
     # Отображение ID чата в заголовке
     put_markdown(f"## 🧊 Чат ID: {chat_id}")
