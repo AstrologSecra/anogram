@@ -149,4 +149,4 @@ async def refresh_msg(chat_id, nickname, msg_box):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    start_server(main, debug=True, port=port, cdn=False)
+    start_server(main, debug=True, port=port, cdn=False) подстрой под render
