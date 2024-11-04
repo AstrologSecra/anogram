@@ -56,7 +56,7 @@ async def main():
     
     put_markdown("## 🧊 Добро пожаловать в онлайн чат!\nИсходный код данного чата укладывается в 100 строк кода!")
 
-    action = await select("Выберите действие", ["Регистрация", "Вход"])
+    action = await select("Выберите действие", ["Регистрация", "Вход", "Удалить аккаунт"])
 
     if action == "Регистрация":
         while True:
@@ -77,6 +77,26 @@ async def main():
         if user_hash in users_db:
             name = users_db[user_hash]
             logging.info(f"Пользователь с именем {name} вошел в систему")
+        else:
+            toast("Хэш не найден!", color='error')
+            logging.warning(f"Хэш не найден")
+            return
+
+    elif action == "Удалить аккаунт":
+        user_hash = await input("Введите ваш хэш", required=True)
+        if user_hash in users_db:
+            name = users_db[user_hash]
+            del users_db[user_hash]
+            save_data()
+            toast(f"Аккаунт пользователя {name} удален!")
+            logging.info(f"Аккаунт пользователя {name} удален")
+            # Удаляем пользователя из всех чатов
+            for chat_id in chat_rooms:
+                if name in chat_rooms[chat_id]['users']:
+                    chat_rooms[chat_id]['users'].remove(name)
+                    chat_rooms[chat_id]['msgs'].append(('📢', f'Пользователь `{name}` удален из чата!'))
+            save_data()
+            return
         else:
             toast("Хэш не найден!", color='error')
             logging.warning(f"Хэш не найден")
