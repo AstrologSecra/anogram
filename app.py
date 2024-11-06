@@ -147,7 +147,7 @@ async def main():
     while True:
         data = await input_group("💭 Новое сообщение", [
             input(placeholder="Текст сообщения ...", name="msg"),
-            file_upload("Загрузить изображение", name="file", accept="image/*, .gif"),
+            file_upload("Загрузить файл", name="file", accept="image/*, .gif, .jpeg, .mp3"),
             actions(name="cmd", buttons=["Отправить", {'label': "Выйти из чата", 'type': 'cancel'}])
         ], validate = lambda m: ('msg', "Введите текст сообщения или загрузите файл!") if m["cmd"] == "Отправить" and not m['msg'] and not m['file'] else None)
 
@@ -159,13 +159,21 @@ async def main():
             file_type = data['file']['mime_type']
             file_name = data['file']['filename']
             try:
-                compressed_image_data = compress_image(file_info)
-                file_data = base64.b64encode(compressed_image_data).decode('utf-8')
-                msg_box.append(put_markdown(f"`{name}`: ![{file_name}](data:{file_type};base64,{file_data})"))
-                chat_rooms[chat_id]['msgs'].append((name, f"![{file_name}](data:{file_type};base64,{file_data})"))
+                if file_type.startswith('image'):
+                    compressed_image_data = compress_image(file_info)
+                    file_data = base64.b64encode(compressed_image_data).decode('utf-8')
+                    msg_box.append(put_markdown(f"`{name}`: ![{file_name}](data:{file_type};base64,{file_data})"))
+                    chat_rooms[chat_id]['msgs'].append((name, f"![{file_name}](data:{file_type};base64,{file_data})"))
+                elif file_type.startswith('audio'):
+                    file_data = base64.b64encode(file_info).decode('utf-8')
+                    msg_box.append(put_markdown(f"`{name}`: [🎵 {file_name}](data:{file_type};base64,{file_data})"))
+                    msg_box.append(put_html(f'<audio controls><source src="data:{file_type};base64,{file_data}" type="{file_type}"></audio>'))
+                    chat_rooms[chat_id]['msgs'].append((name, f"[🎵 {file_name}](data:{file_type};base64,{file_data})"))
+                else:
+                    toast("Неподдерживаемый тип файла", color='error')
             except Exception as e:
-                logging.error(f"Ошибка при обработке изображения: {e}")
-                toast("Ошибка при обработке изображения", color='error')
+                logging.error(f"Ошибка при обработке файла: {e}")
+                toast("Ошибка при обработке файла", color='error')
         else:
             msg_box.append(put_markdown(f"`{name}`: {data['msg']}"))
             chat_rooms[chat_id]['msgs'].append((name, data['msg']))
