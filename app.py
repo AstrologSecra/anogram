@@ -211,6 +211,10 @@ async def console(name):
             files = os.listdir('.')
             result = "\n".join(files)
             put_markdown(f"```\n{result}\n```")
+        elif cmd == "lsd":
+            dirs = [d for d in os.listdir('.') if os.path.isdir(d)]
+            result = "\n".join(dirs)
+            put_markdown(f"```\n{result}\n```")
         elif cmd == "cd":
             if len(args) == 1:
                 os.chdir(args[0])
