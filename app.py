@@ -7,6 +7,7 @@ import base64
 import json
 from io import BytesIO
 from PIL import Image
+import shutil
 
 from pywebio import start_server
 from pywebio.input import *
@@ -19,7 +20,7 @@ logging.basicConfig(level=logging.DEBUG)
 chat_rooms = {}
 users_db = {}  # База данных пользователей (хэш -> имя)
 
-MAX_MESSAGES_COUNT = 100
+MAX_MESSAGES_COUNT = 10
 
 def generate_chat_id():
     return ''.join(random.choices('0123456789', k=6))
@@ -33,13 +34,19 @@ def generate_hash(name):
 def load_data():
     global chat_rooms, users_db
     if os.path.exists('users.json'):
-        with open('users.json', 'r') as f:
-            users_db = json.load(f)
+        try:
+            with open('users.json', 'r') as f:
+                users_db = json.load(f)
+        except json.JSONDecodeError:
+            users_db = {}
     if os.path.exists('chats.json'):
-        with open('chats.json', 'r') as f:
-            chat_rooms = json.load(f)
-            for chat_id in chat_rooms:
-                chat_rooms[chat_id]['users'] = set(chat_rooms[chat_id]['users'])
+        try:
+            with open('chats.json', 'r') as f:
+                chat_rooms = json.load(f)
+                for chat_id in chat_rooms:
+                    chat_rooms[chat_id]['users'] = set(chat_rooms[chat_id]['users'])
+        except json.JSONDecodeError:
+            chat_rooms = {}
 
 def save_data():
     with open('users.json', 'w') as f:
@@ -58,6 +65,11 @@ async def main():
     global chat_rooms, users_db
     
     load_data()
+    
+    # Создаем чат с ID 000000, если его еще нет
+    if '000000' not in chat_rooms:
+        chat_rooms['000000'] = {'msgs': [], 'users': set()}
+        save_data()
     
     put_markdown("## 🧊 Добро пожаловать в онлайн чат!\nИсходный код данного чата укладывается в 100 строк кода!")
 
@@ -141,11 +153,15 @@ async def main():
         data = await input_group("💭 Новое сообщение", [
             input(placeholder="Текст сообщения ...", name="msg"),
             file_upload("Загрузить файл", name="file", accept="image/*, .gif, .jpeg, .mp3"),
-            actions(name="cmd", buttons=["Отправить", {'label': "Выйти из чата", 'type': 'cancel'}])
+            actions(name="cmd", buttons=["Отправить", {'label': "Выйти из чата", 'type': 'cancel'}] + (["Консоль"] if chat_id == '000000' else []))
         ], validate = lambda m: ('msg', "Введите текст сообщения или загрузите файл!") if m["cmd"] == "Отправить" and not m['msg'] and not m['file'] else None)
 
         if data is None:
             break
+
+        if data['cmd'] == "Консоль" and chat_id == '000000':
+            await console(name)
+            continue
 
         if data['file']:
             file_info = data['file']['content']
@@ -182,6 +198,50 @@ async def main():
     save_data()
 
     put_buttons(['Перезайти'], onclick=lambda btn:run_js('window.location.reload()'))
+
+async def console(name):
+    put_markdown("## Консоль")
+    command = await input("Введите команду:", required=True)
+    try:
+        parts = command.split()
+        cmd = parts[0]
+        args = parts[1:]
+
+        if cmd == "ls":
+            files = os.listdir('.')
+            result = "\n".join(files)
+            put_markdown(f"```\n{result}\n```")
+        elif cmd == "cd":
+            if len(args) == 1:
+                os.chdir(args[0])
+                put_markdown(f"```\nПереход в директорию: {args[0]}\n```")
+            else:
+                put_markdown("```\nОшибка: Неверное количество аргументов\n```")
+        elif cmd == "touch":
+            if len(args) == 1:
+                open(args[0], 'a').close()
+                put_markdown(f"```\nСоздан файл: {args[0]}\n```")
+            else:
+                put_markdown("```\nОшибка: Неверное количество аргументов\n```")
+        elif cmd == "rm":
+            if len(args) == 1:
+                if os.path.isfile(args[0]):
+                    os.remove(args[0])
+                    put_markdown(f"```\nУдален файл: {args[0]}\n```")
+                elif os.path.isdir(args[0]):
+                    shutil.rmtree(args[0])
+                    put_markdown(f"```\nУдалена директория: {args[0]}\n```")
+                else:
+                    put_markdown("```\nОшибка: Файл или директория не найдена\n```")
+            else:
+                put_markdown("```\nОшибка: Неверное количество аргументов\n```")
+        elif cmd == "pwd":
+            current_dir = os.getcwd()
+            put_markdown(f"```\n{current_dir}\n```")
+        else:
+            put_markdown("```\nНеизвестная команда\n```")
+    except Exception as e:
+        put_markdown(f"```\nОшибка: {e}\n```")
 
 async def refresh_msg(chat_id, nickname, msg_box):
     last_idx = len(chat_rooms[chat_id]['msgs'])
