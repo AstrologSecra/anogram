@@ -25,13 +25,9 @@ def generate_chat_id():
     return ''.join(random.choices('0123456789', k=6))
 
 def generate_hash(name):
-    # Генерируем случайные символы для добавления в хэш
     random_chars = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=5))
-    # Создаем строку для хеширования
     hash_input = f"{name}{random_chars}"
-    # Хешируем строку с использованием SHA-256
     hash_object = hashlib.sha256(hash_input.encode())
-    # Возвращаем хэш в виде base64 строки
     return base64.b64encode(hash_object.digest()).decode()
 
 def load_data():
@@ -53,7 +49,7 @@ def save_data():
 
 def compress_image(image_data):
     img = Image.open(BytesIO(image_data))
-    img.thumbnail((img.width // 6, img.height // 6), Image.LANCZOS)
+    img.thumbnail((img.width // 5, img.height // 5), Image.LANCZOS)
     output = BytesIO()
     img.save(output, format='JPEG' if img.format == 'JPEG' else 'PNG', quality=70)
     return output.getvalue()
@@ -74,7 +70,6 @@ async def main():
         save_data()
         toast(f"Ваш хэш для входа: {user_hash}")
         logging.info(f"Зарегистрирован новый пользователь с хэшем: {user_hash}")
-        # Открываем новое окно с хэшем пользователя
         run_js(f'window.open("about:blank", "_blank").document.write("Ваш хэш для входа: {user_hash}");')
     elif action == "Вход":
         user_hash = await input("Введите ваш хэш", required=True)
@@ -101,11 +96,10 @@ async def main():
     else:
         logging.info(f"Присоединение к существующему чату с ID: {chat_id}")
 
-    # Отображение ID чата в заголовке
     put_markdown(f"## 🧊 Чат ID: {chat_id}")
 
     msg_box = output()
-    put_scrollable(msg_box, height=300, keep_bottom=True)  # Возвращаем высоту окна чата к исходной
+    put_scrollable(msg_box, height=300, keep_bottom=True)
 
     chat_rooms[chat_id]['users'].add(name)
     save_data()
@@ -115,7 +109,6 @@ async def main():
 
     refresh_task = run_async(refresh_msg(chat_id, name, msg_box))
 
-    # Добавляем JavaScript для обработки кликов на изображениях
     run_js("""
     document.addEventListener('click', function(event) {
         if (event.target.tagName === 'IMG') {
